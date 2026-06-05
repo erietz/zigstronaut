@@ -1,0 +1,10 @@
+.{
+    .name = .zigspace,
+    .version = "0.1.0",
+    .fingerprint = 0xbc3d52c2670c8f6b,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
