@@ -1,5 +1,52 @@
 const std = @import("std");
-const posix = std.posix;
+const builtin = @import("builtin");
+const posix = if (builtin.os.tag != .windows) std.posix else undefined;
+const is_windows = builtin.os.tag == .windows;
+
+// Windows API declarations
+const win32 = if (is_windows) struct {
+    const HANDLE = *anyopaque;
+    const DWORD = u32;
+    const BOOL = i32;
+    const WORD = u16;
+    const SHORT = i16;
+    const COORD = extern struct { X: SHORT, Y: SHORT };
+    const SMALL_RECT = extern struct { Left: SHORT, Top: SHORT, Right: SHORT, Bottom: SHORT };
+    const CONSOLE_SCREEN_BUFFER_INFO = extern struct {
+        dwSize: COORD,
+        dwCursorPosition: COORD,
+        wAttributes: WORD,
+        srWindow: SMALL_RECT,
+        dwMaximumWindowSize: COORD,
+    };
+    const KEY_EVENT_RECORD = extern struct {
+        bKeyDown: BOOL,
+        wRepeatCount: WORD,
+        wVirtualKeyCode: WORD,
+        wVirtualScanCode: WORD,
+        uChar: extern union { UnicodeChar: u16, AsciiChar: u8 },
+        dwControlKeyState: DWORD,
+    };
+    const INPUT_RECORD = extern struct {
+        EventType: WORD,
+        _padding: WORD = 0,
+        Event: extern union { KeyEvent: KEY_EVENT_RECORD },
+    };
+    const INVALID_HANDLE: HANDLE = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
+    const STD_INPUT_HANDLE: DWORD = @bitCast(@as(i32, -10));
+    const STD_OUTPUT_HANDLE: DWORD = @bitCast(@as(i32, -11));
+
+    extern "kernel32" fn GetStdHandle(nStdHandle: DWORD) callconv(.winapi) HANDLE;
+    extern "kernel32" fn GetConsoleMode(hConsole: HANDLE, lpMode: *DWORD) callconv(.winapi) BOOL;
+    extern "kernel32" fn SetConsoleMode(hConsole: HANDLE, dwMode: DWORD) callconv(.winapi) BOOL;
+    extern "kernel32" fn GetConsoleScreenBufferInfo(hConsole: HANDLE, lpInfo: *CONSOLE_SCREEN_BUFFER_INFO) callconv(.winapi) BOOL;
+    extern "kernel32" fn GetNumberOfConsoleInputEvents(hConsole: HANDLE, lpNumber: *DWORD) callconv(.winapi) BOOL;
+    extern "kernel32" fn ReadConsoleInputA(hConsole: HANDLE, lpBuffer: *INPUT_RECORD, nLength: DWORD, lpEventsRead: *DWORD) callconv(.winapi) BOOL;
+    extern "kernel32" fn WriteConsoleA(hConsole: HANDLE, lpBuffer: [*]const u8, nChars: DWORD, lpCharsWritten: ?*DWORD, lpReserved: ?*anyopaque) callconv(.winapi) BOOL;
+    extern "kernel32" fn Sleep(dwMilliseconds: DWORD) callconv(.winapi) void;
+    extern "kernel32" fn QueryPerformanceCounter(lpCounter: *i64) callconv(.winapi) BOOL;
+    extern "kernel32" fn QueryPerformanceFrequency(lpFreq: *i64) callconv(.winapi) BOOL;
+} else undefined;
 
 // ============================================================================
 // ZigSpace - An outer space animation in ASCII art
@@ -10,54 +57,174 @@ const posix = std.posix;
 
 const version = "1.0.0";
 
-// --- Terminal Handling ---
+// --- Platform Abstraction ---
 
-const Termios = std.posix.termios;
-
-var orig_termios: Termios = undefined;
 var term_initialized = false;
 
+// Windows terminal state
+var win_orig_console_mode: if (is_windows) u32 else void = if (is_windows) 0 else {};
+var win_orig_output_mode: if (is_windows) u32 else void = if (is_windows) 0 else {};
+
+// POSIX terminal state
+const Termios = if (!is_windows) std.posix.termios else void;
+var orig_termios: if (!is_windows) Termios else void = if (!is_windows) undefined else {};
+
 fn enableRawMode() !void {
-    orig_termios = try posix.tcgetattr(posix.STDIN_FILENO);
-    term_initialized = true;
+    if (is_windows) {
+        const stdin_handle = win32.GetStdHandle(win32.STD_INPUT_HANDLE);
+        const stdout_handle = win32.GetStdHandle(win32.STD_OUTPUT_HANDLE);
+        if (stdin_handle == win32.INVALID_HANDLE) return error.NotATerminal;
 
-    var raw = orig_termios;
-    // Turn off echo, canonical mode, signals, and input processing
-    raw.lflag.ECHO = false;
-    raw.lflag.ICANON = false;
-    raw.lflag.ISIG = false;
-    raw.lflag.IEXTEN = false;
-    raw.iflag.IXON = false;
-    raw.iflag.ICRNL = false;
-    raw.iflag.BRKINT = false;
-    raw.iflag.INPCK = false;
-    raw.iflag.ISTRIP = false;
-    raw.oflag.OPOST = false;
-    // Set character size to 8 bits
-    raw.cflag.CSIZE = .CS8;
-    // Set read timeout
-    raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
-    raw.cc[@intFromEnum(std.posix.V.TIME)] = 1; // 100ms timeout
+        // Save original modes
+        if (win32.GetConsoleMode(stdin_handle, &win_orig_console_mode) == 0) return error.NotATerminal;
+        _ = win32.GetConsoleMode(stdout_handle, &win_orig_output_mode);
 
-    try posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, raw);
+        // Enable raw input mode
+        const raw_input = win_orig_console_mode & ~@as(u32, 0x0001 | 0x0004 | 0x0010);
+        _ = win32.SetConsoleMode(stdin_handle, raw_input);
+
+        // Enable VT processing for ANSI escape codes
+        const vt_output = win_orig_output_mode | 0x0004; // ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        _ = win32.SetConsoleMode(stdout_handle, vt_output);
+
+        term_initialized = true;
+    } else {
+        orig_termios = try posix.tcgetattr(posix.STDIN_FILENO);
+        term_initialized = true;
+
+        var raw = orig_termios;
+        raw.lflag.ECHO = false;
+        raw.lflag.ICANON = false;
+        raw.lflag.ISIG = false;
+        raw.lflag.IEXTEN = false;
+        raw.iflag.IXON = false;
+        raw.iflag.ICRNL = false;
+        raw.iflag.BRKINT = false;
+        raw.iflag.INPCK = false;
+        raw.iflag.ISTRIP = false;
+        raw.oflag.OPOST = false;
+        raw.cflag.CSIZE = .CS8;
+        raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
+        raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
+
+        try posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, raw);
+    }
 }
 
 fn disableRawMode() void {
-    if (term_initialized) {
+    if (!term_initialized) return;
+    if (is_windows) {
+        const stdin_handle = win32.GetStdHandle(win32.STD_INPUT_HANDLE);
+        const stdout_handle = win32.GetStdHandle(win32.STD_OUTPUT_HANDLE);
+        _ = win32.SetConsoleMode(stdin_handle, win_orig_console_mode);
+        _ = win32.SetConsoleMode(stdout_handle, win_orig_output_mode);
+    } else {
         posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, orig_termios) catch {};
-        term_initialized = false;
     }
+    term_initialized = false;
 }
 
 fn getTermSize() !struct { w: u16, h: u16 } {
-    var ws: posix.winsize = undefined;
-    // Try stdout, then stdin, then stderr (for piped output scenarios)
-    for ([_]i32{ posix.STDOUT_FILENO, posix.STDIN_FILENO, posix.STDERR_FILENO }) |fd| {
-        if (std.c.ioctl(fd, posix.T.IOCGWINSZ, @intFromPtr(&ws)) == 0) {
-            return .{ .w = ws.col, .h = ws.row };
+    if (is_windows) {
+        const handle = win32.GetStdHandle(win32.STD_OUTPUT_HANDLE);
+        var info: win32.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (win32.GetConsoleScreenBufferInfo(handle, &info) != 0) {
+            const w: u16 = @intCast(info.srWindow.Right - info.srWindow.Left + 1);
+            const h: u16 = @intCast(info.srWindow.Bottom - info.srWindow.Top + 1);
+            return .{ .w = w, .h = h };
+        }
+        return .{ .w = 80, .h = 24 };
+    } else {
+        var ws: posix.winsize = undefined;
+        for ([_]i32{ posix.STDOUT_FILENO, posix.STDIN_FILENO, posix.STDERR_FILENO }) |fd| {
+            if (std.c.ioctl(fd, posix.T.IOCGWINSZ, @intFromPtr(&ws)) == 0) {
+                return .{ .w = ws.col, .h = ws.row };
+            }
+        }
+        return .{ .w = 80, .h = 24 };
+    }
+}
+
+fn readInput() ?u8 {
+    if (is_windows) {
+        const handle = win32.GetStdHandle(win32.STD_INPUT_HANDLE);
+        var events_available: u32 = 0;
+        if (win32.GetNumberOfConsoleInputEvents(handle, &events_available) == 0) return null;
+        if (events_available == 0) return null;
+
+        var input_record: win32.INPUT_RECORD = undefined;
+        var events_read: u32 = 0;
+        if (win32.ReadConsoleInputA(handle, &input_record, 1, &events_read) == 0) return null;
+        if (events_read == 0) return null;
+
+        if (input_record.EventType == 0x0001) { // KEY_EVENT
+            const key_event = input_record.Event.KeyEvent;
+            if (key_event.bKeyDown != 0) {
+                const ch = key_event.uChar.AsciiChar;
+                if (ch != 0) return ch;
+            }
+        }
+        return null;
+    } else {
+        var buf: [1]u8 = undefined;
+        const n = std.posix.read(posix.STDIN_FILENO, &buf) catch return null;
+        if (n == 0) return null;
+        return buf[0];
+    }
+}
+
+fn writeAll(data: []const u8) void {
+    if (is_windows) {
+        const handle = win32.GetStdHandle(win32.STD_OUTPUT_HANDLE);
+        var written: u32 = 0;
+        _ = win32.WriteConsoleA(handle, data.ptr, @intCast(data.len), &written, null);
+    } else {
+        var written: usize = 0;
+        while (written < data.len) {
+            const rc = std.c.write(posix.STDOUT_FILENO, @ptrCast(data[written..].ptr), data.len - written);
+            if (rc < 0) break;
+            written += @intCast(rc);
         }
     }
-    return .{ .w = 80, .h = 24 };
+}
+
+fn sleepNs(ns: u64) void {
+    if (is_windows) {
+        const ms = ns / 1_000_000;
+        win32.Sleep(@intCast(if (ms == 0) 1 else ms));
+    } else {
+        const sleep_spec = std.c.timespec{
+            .sec = 0,
+            .nsec = @intCast(ns),
+        };
+        _ = std.c.nanosleep(&sleep_spec, null);
+    }
+}
+
+fn getTimeNs() i64 {
+    if (is_windows) {
+        var freq: i64 = undefined;
+        var counter: i64 = undefined;
+        _ = win32.QueryPerformanceFrequency(&freq);
+        _ = win32.QueryPerformanceCounter(&counter);
+        return @divTrunc(counter * 1_000_000_000, freq);
+    } else {
+        var ts: std.c.timespec = undefined;
+        _ = std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts);
+        return ts.sec * 1_000_000_000 + ts.nsec;
+    }
+}
+
+fn getSeed() u64 {
+    if (is_windows) {
+        var counter: i64 = undefined;
+        _ = win32.QueryPerformanceCounter(&counter);
+        return @bitCast(counter);
+    } else {
+        var ts: std.c.timespec = undefined;
+        _ = std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts);
+        return @bitCast(@as(i64, ts.nsec));
+    }
 }
 
 // --- Output Buffer ---
@@ -95,15 +262,6 @@ const OutputBuffer = struct {
         self.clear();
     }
 };
-
-fn writeAll(data: []const u8) void {
-    var written: usize = 0;
-    while (written < data.len) {
-        const rc = std.c.write(posix.STDOUT_FILENO, @ptrCast(data[written..].ptr), data.len - written);
-        if (rc < 0) break;
-        written += @intCast(rc);
-    }
-}
 
 // --- Colors ---
 
@@ -515,11 +673,8 @@ const SimState = struct {
         self.color_buf = try allocator.alloc(Color, buf_size);
         self.depth_buf = try allocator.alloc(u8, buf_size);
 
-        // Seed RNG from clock
-        var ts_seed: std.c.timespec = undefined;
-        _ = std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts_seed);
-        const seed: u64 = @bitCast(@as(i64, ts_seed.nsec));
-        self.rng = std.Random.Xoshiro256.init(seed);
+        // Seed RNG
+        self.rng = std.Random.Xoshiro256.init(getSeed());
 
         return self;
     }
@@ -1132,15 +1287,6 @@ fn spawnEntities(state: *SimState) void {
     }
 }
 
-// --- Input ---
-
-fn readInput() ?u8 {
-    var buf: [1]u8 = undefined;
-    const n = std.posix.read(posix.STDIN_FILENO, &buf) catch return null;
-    if (n == 0) return null;
-    return buf[0];
-}
-
 // --- Main ---
 
 pub fn main() !void {
@@ -1163,8 +1309,7 @@ pub fn main() !void {
     const dt: f32 = 1.0 / @as(f32, @floatFromInt(target_fps));
 
     while (state.running) {
-        var ts_start: std.c.timespec = undefined;
-        _ = std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts_start);
+        const frame_start = getTimeNs();
 
         // Handle input
         if (readInput()) |key| {
@@ -1202,16 +1347,10 @@ pub fn main() !void {
         state.tick += 1;
 
         // Frame timing
-        var ts_end: std.c.timespec = undefined;
-        _ = std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts_end);
-        const elapsed_ns: i64 = (ts_end.sec - ts_start.sec) * 1_000_000_000 + (ts_end.nsec - ts_start.nsec);
+        const elapsed_ns = getTimeNs() - frame_start;
         const sleep_ns = @as(i64, @intCast(frame_ns)) - elapsed_ns;
         if (sleep_ns > 0) {
-            const sleep_spec = std.c.timespec{
-                .sec = 0,
-                .nsec = sleep_ns,
-            };
-            _ = std.c.nanosleep(&sleep_spec, null);
+            sleepNs(@intCast(sleep_ns));
         }
     }
 
