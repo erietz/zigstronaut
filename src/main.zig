@@ -51,9 +51,11 @@ fn disableRawMode() void {
 
 fn getTermSize() !struct { w: u16, h: u16 } {
     var ws: posix.winsize = undefined;
-    const ret = std.c.ioctl(posix.STDOUT_FILENO, posix.T.IOCGWINSZ, @intFromPtr(&ws));
-    if (ret == 0) {
-        return .{ .w = ws.col, .h = ws.row };
+    // Try stdout, then stdin, then stderr (for piped output scenarios)
+    for ([_]i32{ posix.STDOUT_FILENO, posix.STDIN_FILENO, posix.STDERR_FILENO }) |fd| {
+        if (std.c.ioctl(fd, posix.T.IOCGWINSZ, @intFromPtr(&ws)) == 0) {
+            return .{ .w = ws.col, .h = ws.row };
+        }
     }
     return .{ .w = 80, .h = 24 };
 }
