@@ -47,3 +47,61 @@ jobs:
             zig-out/zigstronaut-macos-aarch64.tar.gz
             zig-out/zigstronaut-windows-x86_64.zip
             zig-out/zigstronaut-windows-aarch64.zip
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="release-${{ steps.sha.outputs.short }}"
+          BASE_URL="https://github.com/erietz/zigstronaut/releases/download/${TAG}"
+
+          SHA_MACOS_ARM=$(shasum -a 256 zig-out/zigstronaut-macos-aarch64.tar.gz | cut -d ' ' -f 1)
+          SHA_MACOS_X86=$(shasum -a 256 zig-out/zigstronaut-macos-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA_LINUX_ARM=$(shasum -a 256 zig-out/zigstronaut-linux-aarch64.tar.gz | cut -d ' ' -f 1)
+          SHA_LINUX_X86=$(shasum -a 256 zig-out/zigstronaut-linux-x86_64.tar.gz | cut -d ' ' -f 1)
+
+          cat > formula.rb << EOF
+          class Zigstronaut < Formula
+            desc "Space-themed terminal animation in ASCII art"
+            homepage "https://github.com/erietz/zigstronaut"
+            version "${TAG}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/zigstronaut-macos-aarch64.tar.gz"
+                sha256 "${SHA_MACOS_ARM}"
+              elsif Hardware::CPU.intel?
+                url "${BASE_URL}/zigstronaut-macos-x86_64.tar.gz"
+                sha256 "${SHA_MACOS_X86}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/zigstronaut-linux-aarch64.tar.gz"
+                sha256 "${SHA_LINUX_ARM}"
+              elsif Hardware::CPU.intel?
+                url "${BASE_URL}/zigstronaut-linux-x86_64.tar.gz"
+                sha256 "${SHA_LINUX_X86}"
+              end
+            end
+
+            def install
+              bin.install "zigstronaut"
+            end
+
+            test do
+              assert_predicate bin/"zigstronaut", :executable?
+            end
+          end
+          EOF
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' formula.rb
+
+          gh api repos/erietz/homebrew-tap/contents/Formula/zigstronaut.rb \
+            --method PUT \
+            --field message="Update zigstronaut to ${TAG}" \
+            --field content="$(base64 -w 0 formula.rb)" \
+            --field sha="$(gh api repos/erietz/homebrew-tap/contents/Formula/zigstronaut.rb --jq .sha)"

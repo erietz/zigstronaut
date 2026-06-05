@@ -2,6 +2,13 @@
 
 A space-themed terminal animation in ASCII art, written in Zig. Instead of fish and sharks, enjoy stars, spaceships, aliens, and more!
 
+## Install (macOS/Linux)
+
+```
+brew tap erietz/tap
+brew install zigstronaut
+```
+
 ## Building
 
 ```
