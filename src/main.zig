@@ -230,11 +230,11 @@ fn getSeed() u64 {
 // --- Output Buffer ---
 
 const OutputBuffer = struct {
-    buf: std.ArrayList(u8),
+    buf: std.ArrayListUnmanaged(u8),
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) OutputBuffer {
-        return .{ .buf = .empty, .allocator = allocator };
+        return .{ .buf = .{}, .allocator = allocator };
     }
 
     fn deinit(self: *OutputBuffer) void {
