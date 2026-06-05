@@ -1096,7 +1096,7 @@ pub fn main() !void {
         // Handle input
         if (readInput()) |key| {
             switch (key) {
-                'q' => state.running = false,
+                'q', 3 => state.running = false, // 3 = Ctrl-C
                 'p' => state.paused = !state.paused,
                 'r' => {
                     // Reset - kill all entities and respawn
