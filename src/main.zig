@@ -49,7 +49,7 @@ const win32 = if (is_windows) struct {
 } else undefined;
 
 // ============================================================================
-// ZigSpace - An outer space animation in ASCII art
+// Zigstronaut - An outer space animation in ASCII art
 //
 // A space-themed terminal animation inspired by asciiquarium.
 // Instead of fish and sharks, enjoy stars, spaceships, aliens, and more!

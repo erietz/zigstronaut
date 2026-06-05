@@ -1,7 +1,7 @@
 .{
-    .name = .zigspace,
+    .name = .zigstronaut,
     .version = "0.1.0",
-    .fingerprint = 0xbc3d52c2670c8f6b,
+    .fingerprint = 0x92464fe044d6569b,
     .paths = .{
         "build.zig",
         "build.zig.zon",
