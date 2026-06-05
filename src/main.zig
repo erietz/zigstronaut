@@ -213,6 +213,24 @@ const small_ships_right = [_][]const u8{
     ,
     \\  <o))>=<
     ,
+    \\              c==o
+    \\            _/____\_
+    \\     _.,--'" ||^ || "`z._
+    \\    /_/^ ___\||  || _/o\ "`-._
+    \\  _/  ]. L_| || .||  \_/_  . _`--._
+    \\ /_~7  _ . " ||. || /] \ ]. (_)  . "`--.
+    \\|__7~.(_)_ []|+--+|/____T_____________L|
+    \\|__|  _^(_) /^   __\____ _   _|
+    \\|__| (_){_) J ]K{__ L___ _   _]
+    \\|__| . _(_) \v     /__________|________
+    \\l__l_ (_). []|+-+-<\^   L  . _   - ---L|
+    \\ \__\    __. ||^l  \Y] /_]  (_) .  _,--'
+    \\   \~_]  L_| || .\ .\\/~.    _,--'"
+    \\    \_\ . __/||  |\  \`-+-<'"
+    \\      "`---._|J__L|X o~~|[\\
+    \\             \____/ \___|[//
+    \\              `--'   `--+-'
+    ,
 };
 
 // Small ships going left
@@ -232,6 +250,24 @@ const small_ships_left = [_][]const u8{
     \\  ~~~~~
     ,
     \\  >=<((o>
+    ,
+    \\              o==c
+    \\             _/____\_
+    \\          _.'z" || ^|| "'--.,._ 
+    \\       _.-'" /o\_ ||  ||\___^ \_\
+    \\    _.--'_ .  _/_\  ||. || |_J .] \_
+    \\ .--'" .  (_) .] \ ]/ || .|| " . _  7~_\
+    \\|L_____________T____\|+--+|[] _(._)~7__|
+    \\           |_   _ ____\__   ^/ (_)^_  |__|
+    \\           [_   _ ___J __}K] J (_}{_) |__|
+    \\  ________|__________\     v/ (_)_ . |__|
+    \\|L--- -   _ .  L   ^/\>-+-+|[] .(_) _l__l
+    \\ '--,_  . (_)  ]_/ ]Y/  l^|| .__    /__/
+    \\    "'-,_    .~/\\.\ .|| |_J  ]_~/ 
+    \\       "'>-+-'`  /|  ||/__. . /_/
+    \\             \\|~~o X|L__J|_.---'"
+    \\             \\|___/ \____/
+    \\              '-+--'   '--'
     ,
 };
 
@@ -254,6 +290,40 @@ const alien_shapes = [_][]const u8{
     \\  {o,o}
     \\  /)__)
     \\  -"--"-
+    ,
+    \\     .-.
+    \\    /_ _\
+    \\    |o^o|
+    \\    \ _ /
+    \\   .-'-'-.
+    \\  /`)  .  (`\
+    \\ / /|.-'-.|\ \
+    \\ \ \| (_) |/ /
+    \\  \_\'-.-'/_/
+    \\  /_/ \_/ \_\
+    \\    |'._.'|
+    \\    |  |  |
+    \\     \_|_/
+    \\     |-|-|
+    \\     |_|_|
+    \\    /_/ \_\
+    ,
+    \\          ___
+    \\       ,-'___'-.
+    \\     ,'  [(_)]  '.
+    \\    |_]||[][O]o[][|
+    \\  _ |_____________| _
+    \\ | []   _______   [] |
+    \\ | []   _______   [] |
+    \\[| ||      _      || |]
+    \\ |_|| =   [=]     ||_|
+    \\ | || =   [|]     || |
+    \\ | ||      _      || |
+    \\ | ||||   (+)    (|| |
+    \\ | ||_____________|| |
+    \\ |_| \___________/ |_|
+    \\ / \      | |      / \
+    \\/___\    /___\    /___\
     ,
 };
 
@@ -564,7 +634,7 @@ fn spawnSmallShip(state: *SimState) void {
     e.* = .{
         .active = true,
         .kind = .small_ship,
-        .x = if (going_right) @as(f32, -15) else @as(f32, @floatFromInt(state.width + 5)),
+        .x = if (going_right) @as(f32, -50) else @as(f32, @floatFromInt(state.width + 5)),
         .y = @floatFromInt(rng.intRangeAtMost(u16, 1, state.height - 3)),
         .vx = if (going_right) speed else -speed,
         .vy = 0,
@@ -578,11 +648,11 @@ fn spawnSmallShip(state: *SimState) void {
             5 => .bright_magenta,
             else => .white,
         },
-        .shape_index = rng.intRangeAtMost(u16, 0, 4),
+        .shape_index = rng.intRangeAtMost(u16, 0, 5),
         .die_offscreen = true,
         .lifetime = -1,
-        .width = 10,
-        .height = 3,
+        .width = 50,
+        .height = 6,
     };
 }
 
@@ -596,22 +666,23 @@ fn spawnAlien(state: *SimState) void {
     e.* = .{
         .active = true,
         .kind = .alien,
-        .x = if (going_right) @as(f32, -10) else @as(f32, @floatFromInt(state.width + 2)),
-        .y = @floatFromInt(rng.intRangeAtMost(u16, 1, state.height - 5)),
+        .x = if (going_right) @as(f32, -28) else @as(f32, @floatFromInt(state.width + 2)),
+        .y = @floatFromInt(rng.intRangeAtMost(u16, 1, state.height - 18)),
         .vx = if (going_right) speed else -speed,
         .vy = @as(f32, rng.float(f32) * 0.2 - 0.1),
         .depth = 15 + rng.intRangeAtMost(u8, 0, 20),
-        .color = switch (rng.intRangeAtMost(u8, 0, 3)) {
+        .color = switch (rng.intRangeAtMost(u8, 0, 4)) {
             0 => .green,
             1 => .bright_green,
             2 => .magenta,
-            else => .bright_magenta,
+            3 => .bright_yellow,
+            else => .bright_white,
         },
-        .shape_index = rng.intRangeAtMost(u16, 0, 3),
+        .shape_index = rng.intRangeAtMost(u16, 0, 5),
         .die_offscreen = true,
         .lifetime = -1,
-        .width = 10,
-        .height = 4,
+        .width = 28,
+        .height = 16,
     };
 }
 
