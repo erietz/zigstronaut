@@ -234,7 +234,7 @@ const OutputBuffer = struct {
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) OutputBuffer {
-        return .{ .buf = .{}, .allocator = allocator };
+        return .{ .buf = .empty, .allocator = allocator };
     }
 
     fn deinit(self: *OutputBuffer) void {
